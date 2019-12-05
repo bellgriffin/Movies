@@ -1,8 +1,8 @@
 ---
 title: "What Determines a Movie’s Revenue?"
+output: html_document
 author: "Griffin Bell, Jacob Aquah, Logan Smith"
 date: "11/20/2019"
-output: pdf_document\
 ---
 
 ```{r setup, include=FALSE}
@@ -14,68 +14,13 @@ library(magrittr)
 library(car)
 library(glmnet)
 library(jtools)
+library(huxtable)
 options(scipen = 999)
-
 ```
 
 
-#Abstract
 
-We wished to see how different factors/attributes affect a movie’s revenue. We were able to see the effect of many predictors, including rating, genre, budget, IMDB score and votes, company, and country of origin. Many movies were missing data for their budget, so we replaced every “NA” with the median budget in order to keep those observations. We used a multiple linear regression model to find significance and adjusted our predictors as needed to meet the assumptions required to use the model. We found meaningful results from every predictor after our transformations.
-
-#Introduction
-
-What determines a movie’s success? Since the implementation of the current MPAA rating system, a movie given an “R” rating was often seen as a death sentence for the box office performance. Using a data set containing information about nearly seven thousand movies, we are able to quantify not only the effect that an MPAA rating has on a movies performance, but also the effect of many other factors. 
-
-Our initial questions were the following:
-
-*Do PG- and G-rated movies make more revenue than R rated movies?
-*Is Disney an outlier for revenue, or can it be attributed to score and budget?
-*Which is more important, budget or score?
-*Are there any interaction effects between genre and rating?
-
-There were more variables collected for each movie in the dataset, including lead actor, runtime, and other less relevant factors that we chose to leave out, as it would have added too many predictors to our model. We changed some of our initial questions as we performed our analysis.
-
-
-#Methods
-
-There are 6820 movies in the dataset (220 movies per year, 1986-2016), all scraped from IMDb. The following tables shows the attributes for each movie, whether or not we will be using it in our analysis, and the type of variable:
-
- Feature  | Description                                       | Will use in analysis? | Feature Type
- -------- | ------------------------------------------------- | --------------------- | -------------
- budget   | the budget of a movie. Many missing values as 0’s | Yes                   | Quantitative
- company  | the production company                            | Yes                   | Categorical
- country  | country of origin                                 | Yes                   | Categorical
- director | name of the director                              | No                    | Categorical
- genre    | main genre of the movie                           | Yes                   | Categorical
- gross    | total revenue of the movie                        | Outcome variable      | Quantitative
- name     | name of the movie                                 | No                    | Categorical
- rating   | rating of the movie (R, PG, etc.)                 | Yes                   | Categorical
- released | release date (YYYY-MM-DD)                         | No                    | Date
- runtime  | duration of the movie                             | No                    | Quantitative
- score    | IMDb user rating                                  | Yes                   | Quantitative
- votes    | number of user votes on IMDb                      | Yes                   | Quantitative
- star     | main actor/actress                                | No                    | Categorical
- writer   | writer of the movie                               | No                    | Categorical
- year     | year of release                                   | Yes                   | Quantitative
- 
- 
-We were interested in keeping the company and country or origin variables in our model, despite there being over two hundred countries of origin and over four thousand different companies. We decided to instead of making levels for every single company and country, we instead chose to see if the number of movies a country or company produces affects the gross. 
-Our data was highly skewed in several categories. Over four thousand of the movies were made in the United States, so we decided to log transform the country and company count, gross, budget, and IMDB votes. This greatly helped us meet the homoscedasticity assumption, which was previously not met. A scatterplot matrix showed that our multicollinearity and normality assumption was met for continuous variables. A density plot showed acceptable normality for the categorical variables, genre and rating. DFFITS/DFBETAS showed that we had no influential points. Our variable inflation factors showed acceptable values to confirm that we had no multicollinearity. 
-We used ggplot and some base R for our descriptive visualization. We used the car library for our DFFITS/DFBETAS, leveneTeset and VIF calculations. 
-
-#Results
-
-##Summary of Model
-
-Since all of our assumptions were met, we found that with the exception of the Adventure, Comedy, and Horror genres, every predictor variable had a significant effect on the gross. 
- 
-
-
-#Conclusion
-
-Data Cleaning
-```{r}
+```{r Data Cleaning, include = FALSE}
 movies <- read_csv('movies.csv')
 
 #Filtered to the most common genres and ratings
@@ -160,9 +105,11 @@ movies <- movies %>%
     )
   )
 
+min_year <- min(movies$year)
 movies %<>%
   ungroup() %>% 
   mutate(
+    year = year - min_year,
     log_gross = log(gross),
     log_budget = log(budget),
     log_votes = log(votes),
@@ -175,104 +122,150 @@ movies %<>%
     genre = relevel(genre, ref = 'Action'),
     rating = relevel(rating, ref = 'PG-13')
     )
+```
 
+
+#Abstract
+
+What makes a blockbuster soar past revenue records on its opening weekend?  We used a multiple linear regression model to find the significance of many predictors, including rating, genre, budget, IMDB score and votes, company, and country of origin. Each of our predictors were significant, with an $R^2$ of 0.60.
+
+#Introduction
+
+What determines a movie’s success? Since the implementation of the current MPAA rating system, a movie given an R-rating was often seen as a death sentence for the box office performance. Using a data set containing information about nearly seven thousand movies, we were able to quantify not only the effect that an MPAA rating has on a movies performance, but also the effect of many other factors. 
+
+Our initial questions included the following:
+
+* Do PG- and G-rated movies make more revenue than R-rated movies?
+* Which is more important, budget or IMDb average vote score?
+* How many movies does a company, on average, need to produce before it reaches the top tier for revenue?
+
+We answered each of these questions and more using multiple linear regression. A better understanding of factors that influence revenue makes for better revenue forecasting for production companies, and helps independent producers decide how much money is needed to make a production successful.
+
+#Methods
+
+There are 6820 movies in the dataset (220 movies per year, 1986-2016), all scraped from IMDb. The following table shows the attributes for each movie, whether or not we will include it in our analysis, and the type of variable:
+
+ Feature  | Description                                       | Will use in analysis? | Feature Type
+ -------- | ------------------------------------------------- | --------------------- | -------------
+ budget   | the budget of a movie. Many missing values as 0’s | Yes                   | Quantitative
+ company  | the production company                            | Yes                   | Categorical
+ country  | country of origin                                 | Yes                   | Categorical
+ director | name of the director                              | No                    | Categorical
+ genre    | main genre of the movie                           | Yes                   | Categorical
+ gross    | total revenue of the movie                        | Outcome variable      | Quantitative
+ name     | name of the movie                                 | No                    | Categorical
+ rating   | rating of the movie (R, PG, etc.)                 | Yes                   | Categorical
+ released | release date (YYYY-MM-DD)                         | No                    | Date
+ runtime  | duration of the movie                             | No                    | Quantitative
+ score    | IMDb user rating                                  | Yes                   | Quantitative
+ votes    | number of user votes on IMDb                      | Yes                   | Quantitative
+ star     | main actor/actress                                | No                    | Categorical
+ writer   | writer of the movie                               | No                    | Categorical
+ year     | year of release                                   | Yes                   | Quantitative
+ 
+ 
+First, we filtered the data by using the most common genres and ratings. There were many extraneous ratings and genres that only applied to one or two movies, and would create an unnecessary amount of dimensionality in our model. Further, for the ratings, they were not easily understood by a US audience (what does a 'B' rating signify?). There were thousands of companies and hundreds of countries represented in our dataset. Rather than create a dummy variable for each country and company, we bucketed them by the number of times they appeared in our dataset, so they would be more manageable categorical variables. Another problem we faced was that one third of the movies had missing budgets, so we filled them in using random selection from the distribution of budgets that were not missing. We selected these randomly from the movies that were in the same bucket for company size, so we would get a more reasonable estimate of what the budget really was. We releveled our categorical variables so that the reference level for company is 'Massive', country is 'USA', genre is 'Action', and rating is 'PG-13'. We first used a multiple linear regression model on untransformed variables, but got very poor results. To fix this, we ran the Box-Cox transformation method and produced the following graph.
+
+```{r echo = FALSE}
 mod1 <- lm(
   gross ~ budget + company + country + genre + rating + score + votes + year,
   data = movies
   )
 
-summary(mod1)
+#summary(mod1)
 
 boxCox(mod1)
 
 mod2 <- lm(
-  log_gross ~ log_budget + company + country + genre + rating + score + log_votes + year,
+  log_gross ~
+    log_budget + company + country + genre + rating + score + log_votes + year,
   data = movies
 )
 
-summary(mod2)
+#summary(mod2)
 
 movies$residuals <- mod2$residuals
 movies$fitted.values <- mod2$fitted.values
 
-movies_x <- movies %>% select(-c(gross, log_gross, residuals, fitted.values, budget, votes))
+movies_x <- movies %>%
+  select(-c(gross, log_gross, residuals, fitted.values, budget, votes))
 movies_x <- model.matrix( ~ .-1, movies_x)
-movies_y <- movies %>% select(gross) %>% as.matrix() %>% as.numeric()
-elastic.cv <- cv.glmnet(x = movies_x, y = log(movies_y), alpha = .5)
-coef(elastic.cv, s = 'lambda.min')
+movies_y <- movies %>% select(log_gross) %>% as.matrix() %>% as.numeric()
+elastic.cv <- cv.glmnet(x = movies_x, y = movies_y, alpha = .5)
+#coef(elastic.cv, s = 'lambda.min')
 
 ```
 
-```{r results = 'asis'}
-export_summs(mod2, scale = TRUE, error_format = "[{conf.low}, {conf.high}]")
-plot_summs(
-  mod2, exp = TRUE, coefs = c(
-    'Log Budget' = 'log_budget',
-    'Log IMDb Votes' = 'log_votes',
-    'Average IMDb Score' = 'score',
-    'Large Company' = 'companyLarge',
-    'Medium Company' = 'companyMedium',
-    'Small Company' = 'companySmall',
-    'Tiny Company' = 'companyTiny',
-    'Large Country' = 'countryLarge',
-    'Medium Country' = 'countryMedium',
-    'Small Country' = 'countrySmall',
-    'Adventure' = 'genreAdventure',
-    'Animation' = 'genreAnimation',
-    'Biography' = 'genreBiography',
-    'Comedy' = 'genreComedy',
-    'Crime' = 'genreCrime',
-    'Drama' = 'genreDrama',
-    'Horror' = 'genreHorror',
-    'Rated-G' = 'ratingG',
-    'Not Rated' = 'ratingNOT RATED',
-    'Rated-PG' = 'ratingPG',
-    'Rated-R' = 'ratingR',
-    'Unrated' = 'ratingUNRATED'
-    ),
-  facet.rows = 2,
- # facet.cols = 3,
-  groups = list(
-     pane_1 = c('log_budget', 'log_votes', 'score'),
-     pane_2 = c('companyLarge', 'companyMedium', 'companySmall', 'companyTiny'),
-     pane_3 = c('countryLarge', 'countryMedium', 'countrySmall'),
-     pane_4 = c('genreAdventure', 'genreAnimation', 'genreBiography', 'genreComedy', 'genreCrime', 'genreDrama', 'genreHorror'),
-     pane_5 = c('ratingG', 'ratingNOT RATED', 'ratingPG', 'ratingR', 'ratingUNRATED')
-       )
-  )
-```
+We rounded $\lambda$ down to 0, and performed a log-transformation. This made intuitive sense as well, as gross revenue, budget, and votes were severely skew-right. This helped the data to get closer to linear relationships and normality for the residuals. Then we created another multiple linear regression using the logged variables. We found the second model to better fulfill the assumptions of multiple linear regression. 
 
+###Multiple Linear Regression Assumptions
 
-```{r}
-#Model Evaluation
+#####Linearity
+To check the linearity assumption, we plotted the fitted values against the residuals, a histogram of the residuals, and partial regression plots.
+
+```{r echo = FALSE}
 #Linearity
 ggplot(movies, aes(residuals, fitted.values)) +
   geom_point()
+```
 
-par(pty = 's')
-hist(movies$residuals, freq = F, breaks = 30)
-curve(dnorm(x, mean = 0, sd = sd(movies$residuals)), add = TRUE)
+We see a tight U-shape in this plot, and an uneven distribution around (0,0). There are still outliers to the left side, even with the log-transformation. It is clear that this is not a purely linear relationship.
 
+```{r echo = FALSE}
 avPlots(mod2, terms = ~ log_budget + log_votes + score + year)
+```
 
+The added-variable plots are less clear in showing the lack of linearity, but it is still there. Each of these plots, perhaps with the exception of 'log_votes' is a cloud without any linear relationship. We can conclude that the linearity assumption is not met.
+
+#####Independence
+We used a sequential plot to test the assumption of independence. 
+
+```{r echo = FALSE}
 #Independence
 x_values <- c(1:nrow(movies))
 ggplot(movies, aes(x_values, log(gross))) +
   geom_point()
+```
 
+This plot gives us reason to believe that the data was collected in a sequential manner, perhaps with the highest grossing movies from each year first to be collected. We must assume however, that this does not show any level of dependence between movies collected sequentially. This assumption is satisfied.
+
+#####Normality
+In assessing the normality assumption, we used a QQ plot and a histogram of the residuals.
+
+```{r echo = FALSE}
 #Normality
 qqnorm(movies$residuals)
 qqline(movies$residuals)
+```
 
+The QQ plot shown above demonstrates a severe deviation from normality with a dramatic change in slope about a third of the way from the left. This is because our residuals are now skew left, so the observations are more tightly packed on the right side of the plot.  
+
+```{r echo = FALSE}
+par(pty = 's')
+hist(movies$residuals, freq = F, breaks = 30, main = 'Histogram of Residuals', xlab = 'Residuals')
+curve(dnorm(x, mean = 0, sd = sd(movies$residuals)), add = TRUE)
+```
+
+This histogram mirrors the QQ plot in showing left skewness. It is fairly encouraging that the residuals are close to the normal curve that is overlaid on the histogram. This assumption is not met however.
+
+#####Homoscedasticity
+The Brown-Forsythe test helped us assess the homoscedasticity assumption, and its results are found below.
+
+```{r echo = FALSE}
 #Homoscedasticity
 #Reference Linearity section
-
 grp <- as.factor(c(rep("lower", floor(dim(movies)[1] / 2)), 
                    rep("upper", ceiling(dim(movies)[1] / 2))))
 leveneTest(movies$residuals ~ grp, center = median)
+```
 
+Because the p-value is so small, we can conclude that the homoscedasticity assumption is not met. This is also confirmed by the scatterplots in the Linearity section, as there is clearly no constant variance.
+
+#####No Influential Points
+In evaluating the assumption for influential points, we used DFBETAS and DFFITS. As an example, we include the DFFITS plot below.
+
+```{r include = FALSE}
 #No Influential Points
-
 model.dfbetas <- as.data.frame(dfbetas(mod2))
 model.dfbetas$obs <- x_values
 
@@ -297,21 +290,101 @@ ggplot(data = model.dfbetas) +
   theme_bw() +
   theme(aspect.ratio = 1)
 
-### DFFITS ###
+```
+
+
+```{r echo = FALSE}
+# DFFITS
 model.dffits <- data.frame("dffits" = dffits(mod2))
 model.dffits$obs <- x_values
 
 ggplot(data = model.dffits) +
   geom_point(mapping = aes(x = obs, y = abs(dffits))) +
-  geom_hline(mapping = aes(yintercept = 2 * sqrt((ncol(movies) - 3) / length(obs))),
+  geom_hline(
+    mapping = aes(yintercept = 2 * sqrt((ncol(movies) - 3) / length(obs))),
              color = "red", linetype = "dashed") +  
   theme_bw() +
   theme(aspect.ratio = 1)
+```
 
+Because of how skewed our data was, we were not surprised to find so many influential points when using DFBETAS and DFFITTS. This assumption is not met.
 
+#####Additional Predictor Variables Unnecessary / Multicollinearity
+We also used the variance inflation factors and pairs plots to assess the multicollinearity assumption.  
+
+```{r include = FALSE}
 #Additional Predictor Variables Unnecessary / Multicollinearity
 vif(mod2)
-mean(vif(mod2))
-pairs(select_if(movies, is.numeric))
-cor(select_if(movies, is.numeric))
+mean_vif <- round(mean(vif(mod2)), 4)
 ```
+
+```{r echo = FALSE}
+pairs(select(movies, log_gross, log_budget, log_votes, score, year))
+```
+
+The pairs plots above do not show any clear collinearity within the numeric variables. Even given that, with a mean VIF of `r mean_vif` we found that it is unclear if this assumption is met. In order to further test this, we ran an elastic net variable selection on our model. This method did not remove any variables from our model, so we proceeded with all our variables, unsure if this assumption is satisfied.
+
+###Tools and Packages
+We used Rstudio, Rmarkdown, jtools, ggstance, and huxtable to create this report. We also used ggplot2 for making plots, tidyverse and magrittr for data manipulation, car for model evaluation, and finally glmnet for elastic net.
+
+#Results
+
+Because many of our assumptions were not met, we cannot draw much inference from the results of our analysis, but they are included below. Nearly all of the variables we included were significant, suggesting that they would be useful in predicting how much revenue would be made from a movie with those characteristics.
+ 
+```{r results = 'asis', echo = FALSE}
+export_summs(mod2, error_format = '[{conf.low}, {conf.high}]', error_pos = 'right')
+```
+
+Given the $R^2$ of 0.60, there is still a fair amount of unexplained variation, which is understandable given the number of variables we were not able to include in our analysis.
+
+Below is a visual representation of the point estimates and 95% confidence intervals for each of the coefficients.
+
+```{r echo = FALSE}
+plot_summs(
+  mod2, exp = TRUE, coefs = c(
+    'Log Budget' = 'log_budget',
+    'Log IMDb Votes' = 'log_votes',
+    'Average IMDb Score' = 'score',
+    'Large Company' = 'companyLarge',
+    'Medium Company' = 'companyMedium',
+    'Small Company' = 'companySmall',
+    'Tiny Company' = 'companyTiny',
+    'Large Country' = 'countryLarge',
+    'Medium Country' = 'countryMedium',
+    'Small Country' = 'countrySmall',
+    'Adventure' = 'genreAdventure',
+    'Animation' = 'genreAnimation',
+    'Biography' = 'genreBiography',
+    'Comedy' = 'genreComedy',
+    'Crime' = 'genreCrime',
+    'Drama' = 'genreDrama',
+    'Horror' = 'genreHorror',
+    'Rated-G' = 'ratingG',
+    'Not Rated' = 'ratingNOT RATED',
+    'Rated-PG' = 'ratingPG',
+    'Rated-R' = 'ratingR',
+    'Unrated' = 'ratingUNRATED'
+    )
+  )
+```
+
+Now we can return to our original questions and answer them:
+
+* Do PG- and G-rated movies make more revenue than R-rated movies?
+    + PG- and G-rated movies both make signficantly more revenue than R-rated movies. Our assumption is that R-rated movies are geared toward a smaller audience, and are not suitable for family viewing.
+  
+* Which is more important, budget or IMDb average vote score?
+    + Inexplicably, IMDb average vote score ended up having a negative coefficient, meaning that a higher IMDb score resulted in lower revenue. Perhaps this was a result of some multicollinearity, but it does give evidence that budget had a larger positive impact than the score.
+  
+* How many movies does a company, on average, need to produce before it reaches the top tier for revenue?
+    + The fewer movies that a company had made, the lower their revenue. Even large companies (> 20 movies) were significantly different from massive companies (> 200 movies). This indicates that the brand name alone of massive companies could be having an impact on revenue.
+  
+  
+#Conclusion
+
+Several of our assumptions for multiple linear regression were not met. Due to the nature of the data set and this assignment, we transformed the data as best we as we could, and then proceeded with our model regardless We found that the only non-significant predictors were the Horror, Comedy, and Adventure genres as well as the Large company level and the Small country level. Every other predictor had a significant effect on the average movie gross revenue. Additional research could be done to find data transformations that would be effective on resolving all of the issues with the assumptions that we encountered. After those transformations are found, causal inference would be much more attainable.
+
+
+
+
+
