@@ -1,6 +1,6 @@
 ---
-title: "Final Project"
-author: "Griffin Bell"
+title: "What Determines a Movie’s Revenue?"
+author: "Griffin Bell, Jacob Aquah, Logan Smith"
 date: "11/20/2019"
 output: html_document
 ---
@@ -12,15 +12,73 @@ library(tidyverse)
 library(ggplot2)
 library(magrittr)
 library(car)
+library(glmnet)
+library(jtools)
 options(scipen = 999)
 
 ```
 
 
+#Abstract
+
+We wished to see how different factors/attributes affect a movie’s revenue. We were able to see the effect of many predictors, including rating, genre, budget, IMDB score and votes, company, and country of origin. Many movies were missing data for their budget, so we replaced every “NA” with the median budget in order to keep those observations. We used a multiple linear regression model to find significance and adjusted our predictors as needed to meet the assumptions required to use the model. We found meaningful results from every predictor after our transformations.
+
+#Introduction
+
+What determines a movie’s success? Since the implementation of the current MPAA rating system, a movie given an “R” rating was often seen as a death sentence for the box office performance. Using a data set containing information about nearly seven thousand movies, we are able to quantify not only the effect that an MPAA rating has on a movies performance, but also the effect of many other factors. 
+
+Our initial questions were the following:
+
+*Do PG- and G-rated movies make more revenue than R rated movies?
+*Is Disney an outlier for revenue, or can it be attributed to score and budget?
+*Which is more important, budget or score?
+*Are there any interaction effects between genre and rating?
+
+There were more variables collected for each movie in the dataset, including lead actor, runtime, and other less relevant factors that we chose to leave out, as it would have added too many predictors to our model. We changed some of our initial questions as we performed our analysis.
+
+
+#Methods
+
+There are 6820 movies in the dataset (220 movies per year, 1986-2016), all scraped from IMDb. The following tables shows the attributes for each movie, whether or not we will be using it in our analysis, and the type of variable:
+
+ Feature  | Description                                       | Will use in analysis? | Feature Type
+ -------- | ------------------------------------------------- | --------------------- | -------------
+ budget   | the budget of a movie. Many missing values as 0’s | Yes                   | Quantitative
+ company  | the production company                            | Yes                   | Categorical
+ country  | country of origin                                 | Yes                   | Categorical
+ director | name of the director                              | No                    | Categorical
+ genre    | main genre of the movie                           | Yes                   | Categorical
+ gross    | total revenue of the movie                        | Outcome variable      | Quantitative
+ name     | name of the movie                                 | No                    | Categorical
+ rating   | rating of the movie (R, PG, etc.)                 | Yes                   | Categorical
+ released | release date (YYYY-MM-DD)                         | No                    | Date
+ runtime  | duration of the movie                             | No                    | Quantitative
+ score    | IMDb user rating                                  | Yes                   | Quantitative
+ votes    | number of user votes on IMDb                      | Yes                   | Quantitative
+ star     | main actor/actress                                | No                    | Categorical
+ writer   | writer of the movie                               | No                    | Categorical
+ year     | year of release                                   | Yes                   | Quantitative
+ 
+ 
+We were interested in keeping the company and country or origin variables in our model, despite there being over two hundred countries of origin and over four thousand different companies. We decided to instead of making levels for every single company and country, we instead chose to see if the number of movies a country or company produces affects the gross. 
+Our data was highly skewed in several categories. Over four thousand of the movies were made in the United States, so we decided to log transform the country and company count, gross, budget, and IMDB votes. This greatly helped us meet the homoscedasticity assumption, which was previously not met. A scatterplot matrix showed that our multicollinearity and normality assumption was met for continuous variables. A density plot showed acceptable normality for the categorical variables, genre and rating. DFFITS/DFBETAS showed that we had no influential points. Our variable inflation factors showed acceptable values to confirm that we had no multicollinearity. 
+We used ggplot and some base R for our descriptive visualization. We used the car library for our DFFITS/DFBETAS, leveneTeset and VIF calculations. 
+
+#Results
+
+##Summary of Model
+
+Since all of our assumptions were met, we found that with the exception of the Adventure, Comedy, and Horror genres, every predictor variable had a significant effect on the gross. 
+ 
+
+
+#Conclusion
+
 Data Cleaning
 ```{r}
 movies <- read_csv('movies.csv')
 
+#Filtered to the most common genres and ratings
 movies %<>% 
   filter(
     genre %in% c(
@@ -28,204 +86,199 @@ movies %<>%
       'Comedy', 'Crime', 'Drama', 'Horror'
       ),
     rating %in% c('G', 'NOT RATED', 'PG', 'PG-13', 'R', 'UNRATED')
-  )
-
-# View how NA budgets are distributed across the companies
-budget_by_company <- movies %>% 
-  mutate(
-    budget_na = ifelse(budget == 0, 'Empty', 'Full')
   ) %>% 
-  group_by(company) %>% 
-  count(budget_na) %>%
-  pivot_wider(values_from = n, names_from = budget_na) %>% 
+  select(budget, company, country, genre, gross, rating, score, votes, year)
+
+#Alter company variable to only include a few categories
+#Bucket companies
+company_counts <- movies %>%
+  count(company) %>% 
   mutate(
-    percent_na = sum(Empty, na.rm = TRUE) / sum(Empty, Full, na.rm = TRUE)
-  )
+    company_desc = case_when(
+      n >= 200 ~ 'Massive',
+      n >= 20 ~ 'Large',
+      n >= 5 ~ 'Medium',
+      n >= 2 ~ 'Small',
+      TRUE ~ 'Tiny'
+    )
+  ) %>%
+  select(-n)
+
+movies %<>%
+  left_join(company_counts, by = 'company') %>% 
+  mutate(company = company_desc) %>%
+  select(-company_desc)
+
+# Bucket countries
+country_counts <- movies %>% 
+  count(country) %>% 
+  arrange(desc(n)) %>% 
+  mutate(
+    country_desc = case_when(
+      country == 'USA' ~ country,
+      n >= 50 ~ 'Large',
+      n >= 5 ~ 'Medium',
+      TRUE ~ 'Small'
+    )
+  ) %>% 
+  select(-n)
+
+movies %<>%
+  left_join(country_counts, by = 'country') %>% 
+  mutate(country = country_desc) %>%
+  select(-country_desc)
 
 # Fill in missing budgets via random selection from the distribution of budgets
 budget_filled <- movies %>% 
-  filter(budget != 0) %>%
-  pull(budget)
-
-budget_dist <- density(budget_filled)
+  filter(budget != 0)
 
 movies <- movies %>% 
   rowwise() %>% 
   mutate(
-    budget = ifelse(
-      budget == 0,
-      sample(budget_filled, 1) + rnorm(1, 0, budget_dist$bw),
-      budget
+    budget = case_when(
+      budget != 0 ~ budget,
+      company == 'Tiny' ~
+        sample(
+          budget_filled %>% filter(company == 'Tiny') %>% pull(budget), 1
+          ),
+      company == 'Small' ~
+        sample(
+          budget_filled %>% filter(company == 'Small') %>% pull(budget), 1
+          ),
+      company == 'Medium' ~
+        sample(
+          budget_filled %>% filter(company == 'Medium') %>% pull(budget), 1
+          ),
+      company == 'Large' ~
+        sample(
+          budget_filled %>% filter(company == 'Large') %>% pull(budget), 1
+          ),
+      company == 'Massive' ~
+        sample(
+          budget_filled %>% filter(company == 'Massive') %>% pull(budget), 1
+          )
     )
   )
 
-# Create new variable: log of the count of movies by company
-company_counts <- movies %>%
-  count(company) %>% 
-  mutate(log_company_count = log(n)) %>% 
-  select(company, log_company_count)
-
-# Create new variable: log of the count of movies by country
-country_counts <- movies %>% 
-  count(country) %>% 
-  mutate(log_country_count = log(n)) %>% 
-  select(country, log_country_count)
-
-# Log budget, gross revenue, and votes
-movies %<>% 
-  left_join(company_counts, by = 'company') %>% 
-  left_join(country_counts, by = 'country') %>% 
+movies %<>%
+  ungroup() %>% 
   mutate(
-    log_budget = log(budget),
     log_gross = log(gross),
-    log_votes = log(votes)
+    log_budget = log(budget),
+    log_votes = log(votes),
+    company = as.factor(company),
+    country = as.factor(country),
+    genre = as.factor(genre),
+    rating = as.factor(rating),
+    company = relevel(company, ref = 'Massive'),
+    country = relevel(country, ref = 'USA'),
+    genre = relevel(genre, ref = 'Action'),
+    rating = relevel(rating, ref = 'PG-13')
+    )
+
+mod1 <- lm(
+  gross ~ budget + company + country + genre + rating + score + votes + year,
+  data = movies
   )
 
+summary(mod1)
 
-ggplot(movies, aes(log_country_count)) +
-  geom_density()
+boxCox(mod1)
 
-ggplot(movies, aes(log_gross)) +
-  geom_density()
-
-```
-
-
-Descriptive Vizualizations
-```{r}
-pairs(select_if(movies, is.numeric))
-cor(select_if(movies, is.numeric))
-
-ggplot(movies, aes(log(gross), color = rating)) +
-  geom_density()
-
-ggplot(filter(movies, genre %in% c('Comedy', 'Drama', 'Action', 'Crime', 'Adventure')), aes(log(gross), color = genre)) +
-  geom_density()
-```
-
-
-
-Model and Summary
-```{r}
-model <- lm(
-  log_gross ~ log_budget + log_company_count + log_country_count + genre +
-    rating + year + score + log_votes, movies
+mod2 <- lm(
+  log_gross ~ log_budget + company + country + genre + rating + score + log_votes + year,
+  data = movies
 )
 
-movies <- movies[-unique(model$na.action),]
-summary(model)
-movies$residuals <- model$residuals
-movies$fitted_values <- model$fitted.values
+summary(mod2)
+
+movies_x <- model.matrix( ~ .-1, movies %>% select(-gross, -log_gross, -residuals, -fitted.values, -budget, -votes))
+movies_y <- movies %>% select(gross) %>% as.matrix() %>% as.numeric()
+elastic.cv <- cv.glmnet(x = movies_x, y = log(movies_y), alpha = .5)
+coef(elastic.cv, s = 'lambda.min')
+
+movies$residuals <- mod2$residuals
+movies$fitted.values <- mod2$fitted.values
+
+plot_coefs(mod2)
+plot_summs(
+  mod2, exp = TRUE, coefs = c(
+    'Log Budget' = 'log_budget',
+    'Log IMDb Votes' = 'log_votes',
+    'Average IMDb Score' = 'score',
+    'Large Company' = 'companyLarge',
+    'Medium Company' = 'companyMedium',
+    'Small Company' = 'companySmall',
+    'Tiny Company' = 'companyTiny',
+    'Large Country' = 'countryLarge',
+    'Medium Country' = 'countryMedium',
+    'Small Country' = 'countrySmall',
+    'Adventure' = 'genreAdventure',
+    'Animation' = 'genreAnimation',
+    'Biography' = 'genreBiography',
+    'Comedy' = 'genreComedy',
+    'Crime' = 'genreCrime',
+    'Drama' = 'genreDrama',
+    'Horror' = 'genreHorror',
+    'Rated-G' = 'ratingG',
+    'Not Rated' = 'ratingNOT RATED',
+    'Rated-PG' = 'ratingPG',
+    'Rated-R' = 'ratingR',
+    'Unrated' = 'ratingUNRATED'
+    ),
+  facet.rows = 2,
+ # facet.cols = 3,
+  groups = list(
+     pane_1 = c('log_budget', 'log_votes', 'score'),
+     pane_2 = c('companyLarge', 'companyMedium', 'companySmall', 'companyTiny'),
+     pane_3 = c('countryLarge', 'countryMedium', 'countrySmall'),
+     pane_4 = c('genreAdventure', 'genreAnimation', 'genreBiography', 'genreComedy', 'genreCrime', 'genreDrama', 'genreHorror'),
+     pane_5 = c('ratingG', 'ratingNOT RATED', 'ratingPG', 'ratingR', 'ratingUNRATED')
+       )
+  )
+
+# ,
+#   groups = list(
+#     pane_1 = c('log_budget', 'log_votes', 'score'),
+#     pane_2 = c('companyLarge', 'companyMedium', 'companySmall', 'companyTiny'),
+#     pane_3 = c('countryLarge', 'countryMedium', 'countrySmall'),
+#     pane_4 = c('genreAdventure', 'genreAnimation', 'genreBiography', 'genreComedy', 'genreCrime', 'genreDrama', 'genreHorror'),
+#     pane_5 = c('ratingG', 'ratingNOT RATED', 'ratingPG', 'ratingR', 'ratingUNRATED')
+#       )
 ```
 
-
-Model Evaluation
 ```{r}
-avPlots(model)
-```
+#Model Evaluation
+#Linearity
+ggplot(movies, aes(residuals, fitted.values)) +
+  geom_point()
 
-
-
-
-
-```{r}
-ggplot(movies, aes(log_budget, residuals)) +
-  geom_point() +
-  geom_hline(aes(yintercept = 0)) +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-ggplot(movies, aes(score, residuals)) +
-  geom_point() +
-  geom_hline(aes(yintercept = 0)) +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-ggplot(movies, aes(log_votes, residuals)) +
-  geom_point() +
-  geom_hline(aes(yintercept = 0)) +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-ggplot(movies, aes(log_company_count, residuals)) +
-  geom_point() +
-  geom_hline(aes(yintercept = 0)) +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-ggplot(movies, aes(log_country_count, residuals)) +
-  geom_point() +
-  geom_hline(aes(yintercept = 0)) +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-
-
-
-```
-
-
-
-
-
-```{r}
-ggplot(movies, aes(log_budget, fitted_values)) +
-  geom_point() +
-  geom_hline(aes(yintercept = 0)) +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-ggplot(movies, aes(score, fitted_values)) +
-  geom_point() +
-  geom_hline(aes(yintercept = 0)) +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-ggplot(movies, aes(log_votes, fitted_values)) +
-  geom_point() +
-  geom_hline(aes(yintercept = 0)) +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-ggplot(movies, aes(log_company_count, fitted_values)) +
-  geom_point() +
-  geom_hline(aes(yintercept = 0)) +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-ggplot(movies, aes(log_country_count, fitted_values)) +
-  geom_point() +
-  geom_hline(aes(yintercept = 0)) +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-
-
-
-```
-
-
-
-
-
-```{r}
-par(pty = 's')
-qqnorm(movies$residuals)
-qqline(movies$residuals)
-```
-
-
-
-
-
-```{r}
 par(pty = 's')
 hist(movies$residuals, freq = F, breaks = 30)
 curve(dnorm(x, mean = 0, sd = sd(movies$residuals)), add = TRUE)
 
+avPlots(mod2, terms = ~ log(budget) + log(votes) + score + year)
+
+#Independence
+x_values <- c(1:nrow(movies))
+ggplot(movies, aes(x_values, log(gross))) +
+  geom_point()
+
+#Normality
+qqnorm(movies$residuals)
+qqline(movies$residuals)
+
+#Homoscedasticity
+#Reference Linearity section
+
 grp <- as.factor(c(rep("lower", floor(dim(movies)[1] / 2)), 
                    rep("upper", ceiling(dim(movies)[1] / 2))))
 leveneTest(movies$residuals ~ grp, center = median)
-```
 
+#No Influential Points
 
-
-
-
-```{r}
-### DFBETAS ###
-model.dfbetas <- as.data.frame(dfbetas(model))
-model.dfbetas$obs <- 1:length(movies$log_gross)
+model.dfbetas <- as.data.frame(dfbetas(mod2))
+model.dfbetas$obs <- x_values
 
 ggplot(data = model.dfbetas) +
   geom_point(mapping = aes(x = obs, y = abs(log_budget))) +
@@ -235,21 +288,7 @@ ggplot(data = model.dfbetas) +
   theme(aspect.ratio = 1)
 
 ggplot(data = model.dfbetas) +
-  geom_point(mapping = aes(x = obs, y = abs(log_votes))) +
-  geom_hline(mapping = aes(yintercept = 2 / sqrt(length(obs))),
-             color = "red", linetype = "dashed") +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-
-ggplot(data = model.dfbetas) +
-  geom_point(mapping = aes(x = obs, y = abs(log_country_count))) +
-  geom_hline(mapping = aes(yintercept = 2 / sqrt(length(obs))),
-             color = "red", linetype = "dashed") +
-  theme_bw() +
-  theme(aspect.ratio = 1)
-
-ggplot(data = model.dfbetas) +
-  geom_point(mapping = aes(x = obs, y = abs(log_company_count))) +
+  geom_point(mapping = aes(x = obs, y = abs(`log(votes)`))) +
   geom_hline(mapping = aes(yintercept = 2 / sqrt(length(obs))),
              color = "red", linetype = "dashed") +
   theme_bw() +
@@ -262,36 +301,21 @@ ggplot(data = model.dfbetas) +
   theme_bw() +
   theme(aspect.ratio = 1)
 
-
-
-```
-
-
-
-
-
-```{r}
-
 ### DFFITS ###
-model.dffits <- data.frame("dffits" = dffits(model))
-model.dffits$obs <- 1:length(movies$log_gross)
+model.dffits <- data.frame("dffits" = dffits(mod2))
+model.dffits$obs <- x_values
 
 ggplot(data = model.dffits) +
   geom_point(mapping = aes(x = obs, y = abs(dffits))) +
-  geom_hline(mapping = aes(yintercept = 2 * sqrt(6 / length(obs))),
+  geom_hline(mapping = aes(yintercept = 2 * sqrt((ncol(movies) - 3) / length(obs))),
              color = "red", linetype = "dashed") +  
   theme_bw() +
   theme(aspect.ratio = 1)
 
 
-
+#Additional Predictor Variables Unnecessary / Multicollinearity
+vif(mod2)
+mean(vif(mod2))
+pairs(select_if(movies, is.numeric))
+cor(select_if(movies, is.numeric))
 ```
-
-
-
-
-
-```{r}
-vif(model)
-```
-

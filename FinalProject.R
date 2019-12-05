@@ -1,10 +1,14 @@
-
+library(tidyverse)
+library(magrittr)
+library(ggplot2)
+library(glmnet)
+library(car)
 
 #-------------------------------------------------------------------------------
 
 # Data Cleaning
 #-------------------------------------------------------------------------------
-movies <- read_csv('Final Project/movies.csv')
+movies <- read_csv('movies.csv')
 
 movies %<>% 
   filter(
@@ -80,6 +84,7 @@ ggplot(filter(movies, genre %in% c('Comedy', 'Drama', 'Action', 'Crime', 'Advent
 
 # Model and Summary
 #-------------------------------------------------------------------------------
+## Do Box-cox check
 model <- lm(
   log_gross ~ log_budget + log_company_count + log_country_count + genre +
     rating + year + runtime + score + log_votes, movies
