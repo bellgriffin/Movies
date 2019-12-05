@@ -2,7 +2,7 @@
 title: "What Determines a Movie’s Revenue?"
 author: "Griffin Bell, Jacob Aquah, Logan Smith"
 date: "11/20/2019"
-output: html_document
+output: pdf_document\
 ---
 
 ```{r setup, include=FALSE}
@@ -192,15 +192,19 @@ mod2 <- lm(
 
 summary(mod2)
 
-movies_x <- model.matrix( ~ .-1, movies %>% select(-gross, -log_gross, -residuals, -fitted.values, -budget, -votes))
+movies$residuals <- mod2$residuals
+movies$fitted.values <- mod2$fitted.values
+
+movies_x <- movies %>% select(-c(gross, log_gross, residuals, fitted.values, budget, votes))
+movies_x <- model.matrix( ~ .-1, movies_x)
 movies_y <- movies %>% select(gross) %>% as.matrix() %>% as.numeric()
 elastic.cv <- cv.glmnet(x = movies_x, y = log(movies_y), alpha = .5)
 coef(elastic.cv, s = 'lambda.min')
 
-movies$residuals <- mod2$residuals
-movies$fitted.values <- mod2$fitted.values
+```
 
-plot_coefs(mod2)
+```{r results = 'asis'}
+export_summs(mod2, scale = TRUE, error_format = "[{conf.low}, {conf.high}]")
 plot_summs(
   mod2, exp = TRUE, coefs = c(
     'Log Budget' = 'log_budget',
@@ -236,16 +240,8 @@ plot_summs(
      pane_5 = c('ratingG', 'ratingNOT RATED', 'ratingPG', 'ratingR', 'ratingUNRATED')
        )
   )
-
-# ,
-#   groups = list(
-#     pane_1 = c('log_budget', 'log_votes', 'score'),
-#     pane_2 = c('companyLarge', 'companyMedium', 'companySmall', 'companyTiny'),
-#     pane_3 = c('countryLarge', 'countryMedium', 'countrySmall'),
-#     pane_4 = c('genreAdventure', 'genreAnimation', 'genreBiography', 'genreComedy', 'genreCrime', 'genreDrama', 'genreHorror'),
-#     pane_5 = c('ratingG', 'ratingNOT RATED', 'ratingPG', 'ratingR', 'ratingUNRATED')
-#       )
 ```
+
 
 ```{r}
 #Model Evaluation
@@ -257,7 +253,7 @@ par(pty = 's')
 hist(movies$residuals, freq = F, breaks = 30)
 curve(dnorm(x, mean = 0, sd = sd(movies$residuals)), add = TRUE)
 
-avPlots(mod2, terms = ~ log(budget) + log(votes) + score + year)
+avPlots(mod2, terms = ~ log_budget + log_votes + score + year)
 
 #Independence
 x_values <- c(1:nrow(movies))
@@ -288,7 +284,7 @@ ggplot(data = model.dfbetas) +
   theme(aspect.ratio = 1)
 
 ggplot(data = model.dfbetas) +
-  geom_point(mapping = aes(x = obs, y = abs(`log(votes)`))) +
+  geom_point(mapping = aes(x = obs, y = abs(log_votes))) +
   geom_hline(mapping = aes(yintercept = 2 / sqrt(length(obs))),
              color = "red", linetype = "dashed") +
   theme_bw() +
